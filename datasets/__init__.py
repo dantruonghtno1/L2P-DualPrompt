@@ -3,14 +3,14 @@
 # This source code is licensed under the license found in the
 # LICENSE file in the root directory of this source tree.
 
-from datasets.seq_cifar100 import SequentialCIFAR100
+# from datasets.seq_cifar100 import SequentialCIFAR100
 from datasets.seq_fewrel import SequentialFewREl
 from datasets.utils.continual_dataset import ContinualDataset
 from argparse import Namespace
 
 # string : instance
 NAMES = {
-    SequentialCIFAR100.NAME: SequentialCIFAR100,
+    # SequentialCIFAR100.NAME: SequentialCIFAR100,
     SequentialFewREl.NAME : SequentialFewREl
 
 }

@@ -49,22 +49,22 @@ def evaluate_fewrel(
             continue 
         correct, correct_mask_classes, total = 0.0, 0.0, 0.0 
         for data in test_loader:
-            inputs, labels = data 
+            inputs, labels, text = data 
 
             input_ids = inputs.cuda()
 
             labels = torch.tensor(labels).cuda()
             # sửa phần đem input vào model forward
             outputs = model.forward_model(
-                input_ids = input_ids, 
+                input_ids = input_ids, text = text
             )
             _, pred = torch.max(outputs.data, 1)
             correct += torch.sum(pred == labels).item()
             total += labels.shape[0]
 
-            mask_classes[outputs, dataset, k]
+            mask_classes(outputs, dataset, k)
             _, pred = torch.max(outputs.data, 1)
-            correct_mask_classes += torch.sum(pred = labels).item()
+            correct_mask_classes += torch.sum(pred == labels).item()
         
         accs.append(correct / total * 100)
         accs_mask_classes.append(correct_mask_classes / total * 100)
@@ -109,7 +109,7 @@ def train_fewrel(
         model.init_opt(args)
         for epoch in range(args.n_epochs):
             for i, data in enumerate(train_loader):
-                inputs, labels = data 
+                inputs, labels, text = data 
                 input_ids = inputs.cuda()
                 # loss = model.observe(inputs, labels,dataset,t)
 
@@ -117,6 +117,7 @@ def train_fewrel(
                     input_ids = input_ids, 
                     labels = labels, 
                     dataset = dataset,
+                    text = text,
                     t = t
                 )
 

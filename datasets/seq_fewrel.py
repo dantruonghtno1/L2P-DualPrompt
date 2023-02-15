@@ -15,16 +15,15 @@ class FewRel:
         with open('/home/truongpdd/L2P-DualPrompt/train_test_flatten.pkl', 'rb') as fr:
             train_dataset, _, test_dataset,self.id2rel, self.rel2id  = pickle.load(fr)
         if train:
-            self.data = train_dataset 
-            ids_list = [self.data[i]['tokens'] for i in range(len(self.data))]
-            targets_list = [self.data[i]['tokens'] for i in range(len(self.data))]
+            self.data = train_dataset[0]
+            self.targets = train_dataset[1]
+            self.text = train_dataset[2]
+
         else:
-            self.data = test_dataset 
-        ids_list = [self.data[i]['tokens'] for i in range(len(self.data))]
-        targets_list = [self.data[i]['relation'] for i in range(len(self.data))]
-        import numpy as np
-        self.data = ids_list
-        self.targets = targets_list
+            self.data = test_dataset[0]
+            self.targets = test_dataset[1]
+            self.text = train_dataset[2]
+
     def __len__(self):
         return len(self.data)
     def __getitem__(self, index : int):
@@ -37,8 +36,8 @@ class FewRel:
                 + relation: int
         """
 
-        tokens, relation = self.data[index], self.targets[index]
-        return tokens, relation
+        tokens, relation, text = self.data[index], self.targets[index], self.text[index]
+        return tokens, relation, text
     def collate_fn(self, data):
         # print(data)
         tokens = torch.tensor(
@@ -47,10 +46,11 @@ class FewRel:
         labels = torch.tensor(
             [item[1] for item in data]
         )
-
+        text = [item[2] for item in data]
         return (
             tokens,
-            labels
+            labels,
+            text
         )
 # class SequentialFewRel(ContinualDataset):
 #     NAME = 'seq-fewrel'

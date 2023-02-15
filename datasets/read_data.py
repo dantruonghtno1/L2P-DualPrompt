@@ -42,7 +42,6 @@ class Load_all_data(object):
             #     args.num_of_val = 140
             #     args.num_of_test = 140
             # """
-
             train_dataset = [[] for i in range(80)]
             val_dataset = [[] for i in range(80)]
             test_dataset = [[] for i in range(80)]
@@ -59,6 +58,7 @@ class Load_all_data(object):
                                                                     padding='max_length',
                                                                     truncation=True,
                                                                     max_length=256)
+                    tokenized_sample['text'] = ' '.join(sample['tokens'])
 
                     if i < 420:
                         train_dataset[self.rel2id[relation]].append(tokenized_sample)
@@ -66,9 +66,10 @@ class Load_all_data(object):
                         val_dataset[self.rel2id[relation]].append(tokenized_sample)
                     else:
                         test_dataset[self.rel2id[relation]].append(tokenized_sample)
-
+            print('--------------------------start save---------------------------')
             with open('./data.pkl', 'wb') as f:
                 pickle.dump((train_dataset, val_dataset, test_dataset, self.id2rel, self.rel2id), f)
+            print('----------------------------end save------------------------------')
             return train_dataset, val_dataset, test_dataset
 
 

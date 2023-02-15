@@ -6,6 +6,7 @@ from models.utils.continual_model import ContinualModel
 from utils.args import *
 from utils.prompt_pool import PromptPool
 transformers.logging.set_verbosity(50)
+from transformers import AutoModelForSequenceClassification, AutoTokenizer 
 
 def get_parser() -> ArgumentParser:
     parser = ArgumentParser(description='l2p_vit')
@@ -33,24 +34,20 @@ class L2PBert(ContinualModel):
         args, 
     ):
         super(L2PBert, self).__init__(backbone, loss, args, None)
-        # self.net.config.type_vocab_size = 4
-        # token_embed = nn.Embedding(self.net.config.type_vocab_size, self.net.config.hidden_size)
-        # token_embed.weight.data.uniform_(-1,1)
-        # self.net.bert.embeddings.token_type_embeddings = token_embed
 
-        self.bertEmbeddings = self.net.bert.embeddings
-        self.bertEncoder = self.net.bert.encoder
-        self.classifier = self.net.classifier 
-
+        self.net = AutoModelForSequenceClassification.from_pretrained('bert-base-uncased')
+        self.net.classifier = torch.nn.Linear(768, 80)
+        self.net = self.net.cuda()
+        self.tokenizer = AutoTokenizer.from_pretrained('bert-base-uncased')
         self.net.requires_grad_(False)
-        self.bertEmbeddings.requires_grad_(False)
-        self.bertEncoder.requires_grad_(False)
-        self.classifier.requires_grad_(False)
+        self.net.bert.embeddings.requires_grad_(False)
+        self.net.bert.encoder.requires_grad_(False)
+        self.net.classifier.requires_grad_(False)
 
         if args.freeze_clf == 0:
-            self.classifier.requires_grad_(True)
+            self.net.classifier.requires_grad_(True)
         else:
-            self.classifier.requires_grad_(False)
+            self.net.classifier.requires_grad_(False)
         
         self.learning_param = None 
         self.args = args 
@@ -81,7 +78,7 @@ class L2PBert(ContinualModel):
         prompt_list = [e for layer_p in self.pool.prompt_list for e in layer_p] 
 
         if args.freeze_clf == 0:
-            self.learning_param = key_list + prompt_list + list(self.classifier.parameters())
+            self.learning_param = key_list + prompt_list + list(self.net.classifier.parameters())
             self.opt = torch.optim.AdamW(
                 params = self.learning_param, 
                 lr = self.lr 
@@ -131,87 +128,80 @@ class L2PBert(ContinualModel):
 
     def bertLayer(
         self, 
-        input_ids, 
+        prompted_x, 
         prompt_length, 
         boundary = None
     ):
         # B, 0:N*Lp, D => POOLING -> B, D 
-        z_prompted = self.layernorm(
-            self.bertEncoder(input_ids)[0]
-        )[:, 1:prompt_length+1, :]
-        z_clf = torch.mean(z_prompted, dim = 1)
-        # batch x D 
-        return self.classifier(z_clf), z_clf 
+        z_prompted = self.net.bert.encoder(prompted_x)[0][:, 1:prompt_length+1, :]
+        z_clf = torch.mean(z_prompted, dim = 1) # batch x D 
+        
+        return self.net.classifier(z_clf), z_clf 
     
     def forward_l2p(
         self, 
         input_ids: torch.Tensor,
+        text, 
         task_id:int = None
     ):
         input_ids = input_ids.cuda()
-        import pickle
-        print('input_ids  ', input_ids)
-        from transformers import AutoModelForSequenceClassification
-        test_model = AutoModelForSequenceClassification.from_pretrained('bert-base-uncased')
-        print('test model : ', test_model(input_ids))
-        print('output : ', self.net(input_ids))
-        torch.save(input_ids, 'input_ids.pt')
-        token_embedding = self.bertEmbeddings(input_ids)
-        print('embedding shape : ', token_embedding.shape)
-        # print(self.bertEncoder)
-        print('token embedding : ', token_embedding)
-        print(token_embedding)
-        representations = self.bertEncoder(token_embedding[:, 1:, :])
-        print('representations shape: ', representations.shape)
+        token_embedding = self.net.bert.embeddings(
+            self.tokenizer(
+                text,
+                return_tensors="pt",
+                padding = "max_length", 
+                truncation = True, 
+                max_length = 256
+            ).input_ids.cuda()
+        )
+        representations = self.net.bert.encoder(token_embedding[:, 1:, :])[0]
         query = representations[:, 0, :]
         prompts, distance, selectedKeys = self.getPrompts(self.pool, query) 
         B, NLp, Dp = prompts.shape 
         prompted_x = torch.cat(
             [
-                token_embedding[:,0, :].unsqeeze(1), 
+                token_embedding[:,0, :].unsqueeze(1), 
                 prompts,
                 token_embedding[:, 1:, :]
             ], 
             1
         )
 
-        # cls + prompt + input
         logits, z_clf = self.bertLayer(
-            input_ids = prompted_x,
-            prompt_length = NLp
+            prompted_x = prompted_x, prompt_length = NLp
         )
-
         return logits, distance, z_clf
 
 
     def forward_model(
         self, 
         input_ids : torch.Tensor, 
+        text ,
         task_id = None
     ):
         if self.pool == None:
             return self.net(input_ids = input_ids, task_id = task_id)
-        logits, distance, z_clf = self.forward_l2p(
-            input_ids = input_ids,
-            task_id = task_id
-        )
 
+        logits, distance, z_clf = self.forward_l2p(
+            input_ids = input_ids, text = text, task_id = task_id
+        )
         return logits
     
     def observe(
         self, 
         input_ids: torch.Tensor,
         labels,
+        text,
         dataset, 
         t
     ):
         logits, distance, z_clf = self.forward_l2p(
-            input_ids = input_ids, 
+            input_ids = input_ids, text = text
         )
         logits_original = logits.clone().detach()
         logits[:, 0:t*dataset.N_CLASSES_PER_TASK] = -float('inf')
         logits[:, (t+1)*dataset.N_CLASSES_PER_TASK:] = -float('inf')
-        loss = self.loss(logits, labels) + self.args.pw * torch.mean(torch.sum(distance, dim = 1))
+        loss = self.loss(logits, labels.cuda()) + self.args.pw * torch.mean(torch.sum(distance, dim = 1))
 
         self.opt.zero_grad()
         loss.backward()

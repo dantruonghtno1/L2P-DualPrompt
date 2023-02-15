@@ -203,21 +203,28 @@ def store_masked_loaders(
         # test_dataset.set_data(select(test_dataset.data, test_mask))
         train_tokens = []
         train_relation = []
+        train_text = []
         for idx in range(len(train_mask)):
             if train_mask[idx]:
                 train_tokens.append(train_dataset.data[idx])
                 train_relation.append(train_dataset.targets[idx])
+                train_text.append(train_dataset.text[idx])
+
         train_dataset.data = train_tokens 
         train_dataset.targets = train_relation
+        train_dataset.text = train_text
 
         test_tokens = []
         test_relation = []
+        test_text = []
         for idx in range(len(test_mask)):
             if test_mask[idx]:
-                test_tokens.append(train_dataset.data[idx])
-                test_relation.append(train_dataset.targets[idx])
+                test_tokens.append(test_dataset.data[idx])
+                test_relation.append(test_dataset.targets[idx])
+                test_text.append(test_dataset.text[idx])
         test_dataset.data = test_tokens
         test_dataset.targets = test_relation
+        test_dataset.text = test_text
         
         train_loader = DataLoader(train_dataset,
                                   batch_size=setting.args.batch_size, 
